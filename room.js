@@ -81,7 +81,8 @@ function tradeLevels(brief, symbol, summary) {
  for(const [label,value] of [['買入／加倉',levels.buy],['賣出／減倉',levels.sell]]){
   const field=el('div');field.append(el('dt',label),el('dd',value||'今期未列價'));fields.append(field);
  }
- const observation=el('p',levels.trigger||summary||stock.watch,'trade-trigger');
+ const observation=el('p',null,'trade-trigger');
+ observation.append(el('span','觀察條件','trade-prefix'),document.createTextNode(levels.trigger||summary||stock.watch));
  box.append(top,fields,observation);
  if(levels.risk)box.append(el('p',levels.risk,'trade-risk'));
  return box;
@@ -217,7 +218,9 @@ function draw(a){
  priceBoard.append(el('p',b.session+' 交易日 · 價位同條件按個人戶口列出','meta'));
  const priorityNotes=new Map(b.priorities.map(([sym,,summary])=>[sym,summary]));
  const shown=new Set([...priorityNotes.keys(),...syms.filter(sym=>b.stocks[sym].levels)]);
- for(const sym of shown)priceBoard.append(tradeLevels(b,sym,priorityNotes.get(sym)));
+ const cards=el('div',null,'trade-cards');
+ for(const sym of shown)cards.append(tradeLevels(b,sym,priorityNotes.get(sym)));
+ priceBoard.append(cards);
  const mix=exposure(a),news=bulletin(b),ideas=candidates(b),sheet=el('div',null,'sheet'),area=el('div',null,'workarea');
  grid.append(priceBoard,snap,mix,lead,news,ideas,list,detail,held,past);sheet.append(head,grid);
  area.append(navigation([['價位','M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',priceBoard],['分布','M10 3a9 9 0 1 0 11 11H10z M14 2v8h8a9 9 0 0 0-8-8z',mix],['新聞','M4 4h16v16H4z M7 8h10 M7 12h4 M14 12h3 M7 16h10',news],['新股','M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z',ideas],['持股','M3 19h18 M6 15V9 M12 15V4 M18 15v-5',list]]),sheet);root.replaceChildren(area);pick(b.priorities[0][0]);refreshLevelTimes();
