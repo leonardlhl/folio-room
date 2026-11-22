@@ -9,9 +9,9 @@ const cash = (v, currency) => v == null ? '待核實' :
   new Intl.NumberFormat('en-HK',{style:'currency',currency,currencyDisplay:'code'}).format(v);
 const number = value => Number(value).toLocaleString('en-HK',{maximumFractionDigits:4});
 const bytes = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
-let book, revision = 0;
+let book, revision = 0, selected = null, visit = null;
 function lock() {
-  revision++; book = null; $('pass').value = ''; $('pass').type = 'password';
+  revision++; book = null; selected = null; visit = null; $('pass').value = ''; $('pass').type = 'password';
   $('reveal').textContent='顯示'; $('reveal').setAttribute('aria-pressed','false');
   $('members').replaceChildren(); $('panel').replaceChildren(); $('room').hidden=true;
   $('gate').hidden=false; $('lock').hidden=true; $('feedback').textContent='';
@@ -39,8 +39,8 @@ $('form').addEventListener('submit',async ev=>{
     const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(enc.iv)},key,bytes(enc.data));
     if(run!==revision) return;
     book=JSON.parse(new TextDecoder().decode(plain)); $('pass').value='';
-    draw(0); $('gate').hidden=true; $('room').hidden=false; $('lock').hidden=false;
-    $('panel').querySelector('h1').focus();
+    visit=crypto.randomUUID(); showChooser(); $('gate').hidden=true; $('room').hidden=false; $('lock').hidden=false;
+    $('choose-title').focus();
   }catch{
     if(run!==revision) return;
     book=null; $('feedback').textContent=stage==='load'?'讀取報告失敗，請重新整理再試。':'解鎖失敗，請核對密碼；如密碼正確，請重新載入報告。';
@@ -73,9 +73,34 @@ function holdings(a){
   for(const p of a.positions){const row=body.insertRow();for(const v of [p.symbol,number(p.qty),cash(p.price,p.currency),cash(p.cost,p.currency),cash(p.value,p.currency)])row.append(el('td',v));}
   scroll.append(table);details.append(scroll);return details;
 }
-function draw(index){
-  const a=book.accounts[index], nav=$('members'), panel=$('panel'); nav.replaceChildren();
-  book.accounts.forEach((person,i)=>{const btn=el('button');btn.append(el('span',person.name.slice(0,1),'avatar a'+i),document.createTextNode(person.name));btn.setAttribute('aria-pressed',String(i===index));btn.addEventListener('click',()=>{draw(i);$('members').children[i].focus()});nav.append(btn);});
+function showChooser(returnTo = null) {
+  selected = null;
+  $('panel').replaceChildren();
+  $('detail').hidden = true;
+  $('chooser').hidden = false;
+  const nav = $('members');
+  nav.replaceChildren();
+  book.accounts.forEach((person, i) => {
+    const button = el('button', undefined, 'member member-' + i);
+    button.type = 'button';
+    const badge = el('span', person.name.slice(0, 1), 'monogram');
+    const arrow = el('span', '↗', 'enter-arrow');
+    badge.setAttribute('aria-hidden', 'true');
+    arrow.setAttribute('aria-hidden', 'true');
+    button.append(badge, el('strong', person.name), arrow);
+    button.addEventListener('click', () => {
+      history.pushState({folioVisit:visit, account:i}, '');
+      showAccount(i);
+    });
+    nav.append(button);
+  });
+  if (returnTo !== null) nav.children[returnTo]?.focus();
+}
+function showAccount(index) {
+  const a = book.accounts[index], panel = $('panel');
+  selected = index;
+  $('chooser').hidden = true;
+  $('detail').hidden = false;
   const title=el('div',undefined,'title'),h=el('h1',a.name+' 嘅報告');h.tabIndex=-1;
   title.append(h,el('p',a.broker+' · 持倉截至 '+a.asOf,'sub'));
   const grid=el('div',undefined,'board'+(a.large?' large':''));
@@ -84,5 +109,19 @@ function draw(index){
   for(const item of a.review.items){const row=el('div',undefined,'decision');row.append(el('b',item.title),el('p',item.body));focus.append(row);}
   for(const e of a.timeline){const row=el('div',undefined,'event');row.append(el('span',e.date,'when'),el('b',e.title),el('p',e.body));tl.append(row);}
   if(a.large)grid.append(focus,tl,portfolio(a));else grid.append(portfolio(a),focus,tl);
-  grid.append(holdings(a));panel.replaceChildren(title,grid);
+  grid.append(holdings(a));panel.replaceChildren(title,grid);h.focus();
 }
+
+$('back').addEventListener('click', () => {
+  if (history.state?.folioVisit === visit && selected !== null) history.back();
+  else showChooser(selected);
+});
+window.addEventListener('popstate', event => {
+  if (!book) return;
+  const state = event.state;
+  if (state?.folioVisit === visit && Number.isInteger(state.account) && book.accounts[state.account]) {
+    showAccount(state.account);
+  } else {
+    showChooser(selected);
+  }
+});

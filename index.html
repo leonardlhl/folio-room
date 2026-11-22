@@ -1,5 +1,14 @@
 <!doctype html>
-<html lang="zh-HK"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"><meta name="theme-color" content="#f3f5f8"><title>Folio Room · 持倉手記</title><link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="stylesheet" href="room.css"><script type="module" src="room.js"></script></head><body>
+<html lang="zh-HK"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"><meta name="theme-color" content="#f3f5f8"><title>Folio Room · 持倉手記</title><link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="stylesheet" href="room.css?v=members-1"><script type="module" src="room.js?v=members-1"></script></head><body>
 <header class="top"><div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Folio Room</span></div><button id="lock" hidden>鎖定報告</button></header>
 <main id="gate"><section class="entry"><div class="art" aria-hidden="true"><div class="paper p3"></div><div class="paper p2"></div><div class="paper p1"><i></i><i></i><i></i><i></i><i></i></div></div><div class="gatecopy"><h1>持倉手記</h1><p>輸入共用密碼，查看三個戶口嘅持倉同最近部署。</p><form id="form"><label for="pass">報告密碼</label><div class="field"><input type="password" id="pass" autocomplete="current-password" required spellcheck="false" autocapitalize="none"><button type="button" id="reveal" aria-pressed="false">顯示</button></div><button type="submit" class="primary">解鎖報告 <span aria-hidden="true">↗</span></button></form><p id="feedback" role="status" aria-live="polite"></p></div></section></main>
-<main id="room" hidden><div class="layout"><aside><h2>戶口</h2><nav id="members" aria-label="切換戶口"></nav></aside><div id="panel"></div></div></main><noscript>請開啟 JavaScript，以便喺呢部裝置解鎖報告。</noscript></body></html>
+<main id="room" hidden>
+<section id="chooser" aria-labelledby="choose-title">
+  <h1 id="choose-title" tabindex="-1">選擇戶口</h1>
+  <nav id="members" aria-label="選擇持倉報告"></nav>
+</section>
+<section id="detail" hidden>
+  <button type="button" id="back"><span aria-hidden="true">←</span> 返回戶口選擇</button>
+  <div id="panel"></div>
+</section>
+</main><noscript>請開啟 JavaScript，以便喺呢部裝置解鎖報告。</noscript></body></html>
