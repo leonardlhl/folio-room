@@ -30,7 +30,7 @@ async function unlock(){
   const data=await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(e.iv)},key,bytes(e.data));
   if(generation!==run)return;phase='format';
   const payload=JSON.parse(new TextDecoder().decode(data));if(payload.room!==room||!payload.account?.brief)throw Error();
-  draw(payload.account);$('gate').hidden=true;$('room').hidden=false;$('lock').hidden=shared;$('pass').value='';$('report-title').focus();
+  draw(payload.account);$('gate').hidden=true;$('room').hidden=false;$('lock').hidden=shared;$('pass').value='';$('report-title').focus({preventScroll:true});window.scrollTo(0,0);
  }catch{if(generation===run){$('intro').textContent=shared?'專屬報告':'私人投資手記';
  $('feedback').textContent=phase==='load'?'未能載入報告，請重新整理。':phase==='format'?'報告格式未能讀取。':shared?'連結未完整或已失效，請重新開啟完整專屬連結。':'密碼未能解鎖呢份報告。';}}
  finally{if(generation===run)button.disabled=false;}
@@ -54,10 +54,17 @@ function chart(series){
  const values=series.map(x=>x[1]),min=Math.min(...values),max=Math.max(...values),space=Math.max(max-min,max*.002);
  const time=series.map(x=>Date.parse(x[0]+'T12:00:00Z')),start=time[0],end=time.at(-1);
  const xy=values.map((v,i)=>[9+414*(time[i]-start)/(end-start),114-85*(v-min)/space]);
- for(const y of [29,71.5,114]){shape('line',{x1:9,x2:425,y1:y,y2:y,stroke:'#dce4ed','stroke-dasharray':'3 4'});shape('text',{x:436,y:y+4,fill:'#596979','font-size':11},(min+(114-y)*space/85).toFixed(2));}
- const points=xy.map(p=>p.join(',')).join(' ');shape('polygon',{points:'9,129 '+points+' 423,129',fill:'#eaf0fc'});
- shape('polyline',{points,fill:'none',stroke:'#315ea9','stroke-width':2.8,'stroke-linejoin':'round'});
- xy.forEach(([x,y],i)=>{const p=shape('circle',{cx:x,cy:y,r:i===xy.length-1?4:2.6,fill:'#315ea9'});const t=document.createElementNS(ns,'title');t.textContent=series[i].join(' · ');p.append(t);});
+ for(const y of [29,71.5,114]){shape('line',{x1:9,x2:425,y1:y,y2:y,stroke:'#e9e9ef','stroke-dasharray':'3 4'});shape('text',{x:436,y:y+4,fill:'#596979','font-size':11},(min+(114-y)*space/85).toFixed(2));}
+ const rising=values.at(-1)>=values[0],ink=rising?'#159d85':'#8a69c7';
+ const defs=shape('defs',{}),gradient=document.createElementNS(ns,'linearGradient');
+ gradient.id='price-wash';gradient.setAttribute('x2','0');gradient.setAttribute('y2','1');
+ for(const [offset,opacity] of [['0%','.36'],['100%','.015']]){
+  const stop=document.createElementNS(ns,'stop');stop.setAttribute('offset',offset);stop.setAttribute('stop-color',rising?'#46d6b8':'#c0a5f0');stop.setAttribute('stop-opacity',opacity);gradient.append(stop);
+ }
+ defs.append(gradient);
+ const points=xy.map(p=>p.join(',')).join(' ');shape('polygon',{points:'9,129 '+points+' 423,129',fill:'url(#price-wash)'});
+ shape('polyline',{points,fill:'none',stroke:ink,'stroke-width':2.8,'stroke-linejoin':'round'});
+ xy.forEach(([x,y],i)=>{const p=shape('circle',{cx:x,cy:y,r:i===xy.length-1?4:2.6,fill:ink});const t=document.createElementNS(ns,'title');t.textContent=series[i].join(' · ');p.append(t);});
  const cap=el('figcaption');cap.append(el('span',series[0][0]),el('span','收市 · '+series.length+' 個觀察日'),el('span',series.at(-1)[0]));area.append(svg,cap);return area;
 }
 function details(a,sym,host){
@@ -74,7 +81,13 @@ function details(a,sym,host){
  if(s.sources.length){const nav=el('div',null,'sources');for(const source of s.sources){const l=el('a',source.label+' ↗');l.href=source.url;l.target='_blank';l.rel='noopener noreferrer';nav.append(l);}host.append(nav);}
 }
 
-const colors=['#5758b7','#64a89b','#eda057','#87a3d6','#b77eae','#80a25e','#d48180','#6497a9','#d3b351','#a58fd2','#677a84','#a98f75','#78947e','#b5a4bf'];
+// Use the same hue for a holding's sectors and legend marker.
+const colors=['#57b3ee','#ffad77','#ae90e8','#64cdb8','#f58fa3','#f4c557','#97a5ec','#42b7c7','#da91cc','#a8c576','#f39970','#a193d5','#73c4db','#d6ae63'];
+function svgNode(tag,attrs){
+ const node=document.createElementNS('http://www.w3.org/2000/svg',tag);
+ for(const [k,v] of Object.entries(attrs))node.setAttribute(k,String(v));
+ return node;
+}
 function exposure(account){
  const box=frame('持倉分布','mix'),rows=account.positions;
  const units=new Set(rows.map(p=>p.currency)),currency=units.size===1?rows[0].currency:account.currency;
@@ -87,17 +100,31 @@ function exposure(account){
  if(!total){box.append(el('p','暫無可計算市值。'));return box;}
  const body=el('div',null,'mixbody'),disc=el('div',null,'wheel'),center=el('div',null,'wheeltext'),cap=el('small','持倉'),big=el('strong'),svgns='http://www.w3.org/2000/svg';
  const svg=document.createElementNS(svgns,'svg');svg.setAttribute('viewBox','0 0 100 100');svg.setAttribute('aria-hidden','true');center.append(cap,big);
- const legend=el('div',null,'mixlegend'),readout=el('p',null,'readout');readout.setAttribute('aria-live','polite');let active=-1;
+ const legend=el('div',null,'mixlegend'),readout=el('p',null,'readout');readout.setAttribute('aria-live','polite');
  const segments=[],buttons=[];
- function select(i){active=i;const p=items[i];big.textContent=(100*p.base/total).toFixed(1)+'%';cap.textContent=p.symbol;
- readout.textContent=p.symbol+' · '+num(p.qty)+' 股 · '+money(p.value,p.currency)+(p.currency!==currency?' ≈ '+money(p.base,currency):'');
- buttons.forEach((b,j)=>b.setAttribute('aria-pressed',String(i===j)));segments.forEach((c,j)=>c.setAttribute('stroke-width',String(j===i?17:13)));}
+ function select(i){
+  const p=items[i];cap.textContent=p.symbol;big.textContent=(100*p.base/total).toFixed(1)+'%';
+  readout.textContent=p.symbol+' · '+num(p.qty)+' 股 · '+money(p.value,p.currency)+(p.currency!==currency?' ≈ '+money(p.base,currency):'');
+  buttons.forEach((b,j)=>b.setAttribute('aria-pressed',String(i===j)));
+  segments.forEach((g,j)=>g.classList.toggle('selected',j===i));
+ }
  let used=0;
- items.forEach((p,i)=>{let share=p.base/total*100;const color=colors[i%colors.length],c=document.createElementNS(svgns,'circle');
- for(const [k,v] of Object.entries({cx:50,cy:50,r:39,pathLength:100,fill:'none',stroke:color,'stroke-dasharray':Math.max(0,share-Math.min(.5,share*.08))+' '+(100-share+Math.min(.5,share*.08)),'stroke-dashoffset':-used,transform:'rotate(-90 50 50)'}))c.setAttribute(k,String(v));
- used+=share;c.addEventListener('click',()=>select(i));segments.push(c);svg.append(c);
- const b=el('button',null,'legenditem'),dot=document.createElementNS(svgns,'svg');dot.setAttribute('width','10');dot.setAttribute('height','10');dot.setAttribute('aria-hidden','true');const d=document.createElementNS(svgns,'circle');d.setAttribute('cx',5);d.setAttribute('cy',5);d.setAttribute('r',4);d.setAttribute('fill',color);dot.append(d);
- b.append(dot,el('span',account.large?(account.brief.stocks[p.symbol]?.name||p.symbol)+' · '+p.symbol:p.symbol),el('strong',share.toFixed(1)+'%'));b.type='button';b.onclick=()=>select(i);buttons.push(b);legend.append(b);});
+ items.forEach((p,i)=>{
+  const share=p.base/total*100,color=colors[i%colors.length],gap=Math.min(.45,share*.08);
+  const segment=svgNode('g',{class:'slice'}),arc={cx:50,cy:50,pathLength:100,fill:'none',stroke:color,'stroke-dasharray':(share-gap)+' '+(100-share+gap),'stroke-dashoffset':-used,transform:'rotate(-90 50 50)'};
+  for(const [r,w,alpha] of [[27.6,7.4,.22],[34.6,5.4,.4],[40.7,4,.61]]){
+   segment.append(svgNode('circle',{...arc,r,'stroke-width':w,'stroke-opacity':alpha}));
+  }
+  const angle=(used+share/2)*Math.PI/50-Math.PI/2;
+  const marker=svgNode('circle',{cx:50+44.1*Math.cos(angle),cy:50+44.1*Math.sin(angle),r:share>=3?1.4:.8,fill:color});
+  segment.append(marker);
+  const hit=svgNode('circle',{...arc,r:34,'stroke-width':21,'stroke-opacity':0,'pointer-events':'stroke'});segment.append(hit);
+  segment.addEventListener('click',()=>select(i));segments.push(segment);svg.append(segment);used+=share;
+  const b=el('button',null,'legenditem'),dot=svgNode('svg',{width:14,height:14,viewBox:'0 0 14 14','aria-hidden':true});
+  dot.append(svgNode('circle',{cx:7,cy:7,r:6.7,fill:color,'fill-opacity':.25}),svgNode('circle',{cx:7,cy:7,r:3.4,fill:color}));
+  b.append(dot,el('span',account.large?(account.brief.stocks[p.symbol]?.name||p.symbol)+' · '+p.symbol:p.symbol),el('strong',share.toFixed(1)+'%'));
+  b.type='button';b.onclick=()=>select(i);buttons.push(b);legend.append(b);
+ });
  disc.append(svg,center);body.append(disc,legend);box.append(el('p',items.length+' 隻 · '+money(account.securitiesTotal??total,currency)+' 證券市值','meta'),body,readout,el('p',account.asOf+' 快照 · 百分比以全部持股市值計，現金另列。'+(units.size>1?' 美股按截圖折算，1 美元約 '+num(fx.USD)+' 港元。':''),'meta'));if(units.size>1){
  const splits=el('div',null,'regions');
  for(const [cc,label] of [['HKD','港股'],['USD','美股']]){const sum=items.filter(p=>p.currency===cc).reduce((v,p)=>v+p.base,0);if(sum>0)fact(splits,label+' · 佔證券市值',(100*sum/total).toFixed(1)+'%');}
@@ -117,7 +144,8 @@ function candidates(b){
 function navigation(pairs){
  const nav=el('nav',null,'rail');nav.setAttribute('aria-label','報告分區');
  for(const [title,icon,target] of pairs){
- const b=el('button');b.type='button';const glyph=el('span',icon,'navglyph');glyph.setAttribute('aria-hidden','true');b.append(glyph,el('span',title));
+ const b=el('button');b.type='button';const glyph=svgNode('svg',{class:'navglyph',viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':1.65,'stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':true});
+ glyph.append(svgNode('path',{d:icon}));b.append(glyph,el('span',title));
  b.setAttribute('aria-pressed',String(nav.children.length===0));b.onclick=()=>{for(const sibling of nav.children)sibling.setAttribute('aria-pressed',String(sibling===b));target.tabIndex=-1;target.focus({preventScroll:true});target.scrollIntoView({block:'start'});};nav.append(b);}
  return nav;
 }
@@ -140,9 +168,10 @@ function draw(a){
  }
  lead.append(actions,el('small','適用至 '+new Intl.DateTimeFormat('zh-HK',{timeZone:'Asia/Hong_Kong',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(b.expires))+' 香港時間；港股以當地收市為限。','meta'));
  snap.append(el('p',a.asOf+' 確認 · '+a.broker,'meta'));
- fact(snap,a.balanceNote?'資產淨值 · '+a.balanceNote:'資產淨值',a.navDisplay||money(a.nav,a.currency));
- fact(snap,a.cashDisplay?'美元現金':'現金總值',a.cashDisplay||money(a.cash,a.currency));
- fact(snap,'已確認持倉',a.positions.length+' 隻');snap.append(el('p',a.note,'meta'));
+ const metrics=el('div',null,'metrics');snap.append(metrics);
+ fact(metrics,a.balanceNote?'資產淨值 · '+a.balanceNote:'資產淨值',a.navDisplay||money(a.nav,a.currency));
+ fact(metrics,a.cashDisplay?'美元現金':'現金總值',a.cashDisplay||money(a.cash,a.currency));
+ fact(metrics,'已確認持倉',a.positions.length+' 隻');snap.append(el('p',a.note,'meta'));
  const rows=el('div',null,'rows');
  for(const sym of syms){
   const s=b.stocks[sym],btn=el('button',null,'stockrow'),identity=el('span'),price=el('span');
@@ -155,6 +184,6 @@ function draw(a){
  const past=el('details',null,'module history');past.append(el('summary','上次部署紀錄 · '+a.review.date));for(const i of a.review.items)note(past,i.title,i.body);
  const held=el('details',null,'module history');held.append(el('summary','持倉明細 · '+a.asOf));const wrap=el('div',null,'holder'),t=el('table');const hdr=t.createTHead().insertRow();for(const item of ['股票','股數','平均成本','截圖市值'])hdr.append(el('th',item));const body=t.createTBody();for(const p of a.positions){const tr=body.insertRow();for(const x of [p.symbol,num(p.qty),money(p.cost,p.currency),money(p.value,p.currency)])tr.append(el('td',x));}wrap.append(t);held.append(wrap);
  const mix=exposure(a),news=bulletin(b),ideas=candidates(b),sheet=el('div',null,'sheet'),area=el('div',null,'workarea');
- grid.append(lead,mix,news,ideas,snap,list,detail,held,past);sheet.append(head,grid);
- area.append(navigation([['部署','▦',lead],['分布','◔',mix],['新聞','≡',news],['新股','◇',ideas],['持股','▤',list]]),sheet);root.replaceChildren(area);pick(b.priorities[0][0]);
+ grid.append(snap,mix,lead,news,ideas,list,detail,held,past);sheet.append(head,grid);
+ area.append(navigation([['部署','M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',lead],['分布','M10 3a9 9 0 1 0 11 11H10z M14 2v8h8a9 9 0 0 0-8-8z',mix],['新聞','M4 4h16v16H4z M7 8h10 M7 12h4 M14 12h3 M7 16h10',news],['新股','M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z',ideas],['持股','M3 19h18 M6 15V9 M12 15V4 M18 15v-5',list]]),sheet);root.replaceChildren(area);pick(b.priorities[0][0]);
 }
