@@ -1,127 +1,109 @@
-const $ = id => document.getElementById(id);
-const el = (tag, text, cls) => {
-  const node = document.createElement(tag);
-  if (text !== undefined) node.textContent = text;
-  if (cls) node.className = cls;
-  return node;
-};
-const cash = (v, currency) => v == null ? '待核實' :
-  new Intl.NumberFormat('en-HK',{style:'currency',currency,currencyDisplay:'code'}).format(v);
-const number = value => Number(value).toLocaleString('en-HK',{maximumFractionDigits:4});
-const bytes = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
-let book, revision = 0, selected = null, visit = null;
-function lock() {
-  revision++; book = null; selected = null; visit = null; $('pass').value = ''; $('pass').type = 'password';
-  $('reveal').textContent='顯示'; $('reveal').setAttribute('aria-pressed','false');
-  $('members').replaceChildren(); $('panel').replaceChildren(); $('room').hidden=true;
-  $('gate').hidden=false; $('lock').hidden=true; $('feedback').textContent='';
-  $('form').querySelector('[type=submit]').disabled=false;
+const $=id=>document.getElementById(id);
+function el(tag,text,cls){const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;}
+const money=(n,c)=>Number.isFinite(n)?new Intl.NumberFormat('zh-HK',{style:'currency',currency:c,currencyDisplay:'code'}).format(n):'待確認';
+const num=n=>Number(n).toLocaleString('en-HK',{maximumFractionDigits:4});
+const room=new URL(location.href).searchParams.get('room');
+const shared=room==='c';
+let run=0;
+function bytes(s){return Uint8Array.from(atob(s),c=>c.charCodeAt(0));}
+function reset(){
+ run++;$('pass').value='';$('pass').type='password';$('reveal').textContent='顯示';$('reveal').setAttribute('aria-pressed','false');
+ $('panel').replaceChildren();$('room').hidden=true;$('gate').hidden=false;$('lock').hidden=true;$('feedback').textContent='';
+ $('form').hidden=!['a','b'].includes(room);$('form').querySelector('[type=submit]').disabled=false;
+ $('intro').textContent=shared?'開啟專屬報告…':$('form').hidden?'請用你收到嘅個人連結開啟報告。':'輸入密碼，查看你嘅部署同逐股分析。';
 }
-$('lock').addEventListener('click',()=>{lock();$('pass').focus()});
-window.addEventListener('pagehide',lock);
-$('reveal').addEventListener('click',()=>{
-  const show=$('pass').type==='password'; $('pass').type=show?'text':'password';
-  $('reveal').textContent=show?'隱藏':'顯示'; $('reveal').setAttribute('aria-pressed',String(show));
-});
-$('form').addEventListener('submit',async ev=>{
-  ev.preventDefault();
-  const run=++revision, button=ev.currentTarget.querySelector('[type=submit]');
-  button.disabled=true; $('feedback').textContent='解鎖中…';
-  let stage='load';
-  try{
-    const response=await fetch('./report.enc.json',{cache:'no-store',credentials:'omit'});
-    if(!response.ok) throw Error('load');
-    const enc=await response.json();
-    if(enc.v!==1 || enc.iterations!==600000) throw Error('format');
-    stage='unlock';
-    const input=await crypto.subtle.importKey('raw',new TextEncoder().encode($('pass').value.trim()),'PBKDF2',false,['deriveKey']);
-    const key=await crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',iterations:enc.iterations,salt:bytes(enc.salt)},input,{name:'AES-GCM',length:256},false,['decrypt']);
-    const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(enc.iv)},key,bytes(enc.data));
-    if(run!==revision) return;
-    book=JSON.parse(new TextDecoder().decode(plain)); $('pass').value='';
-    visit=crypto.randomUUID(); showChooser(); $('gate').hidden=true; $('room').hidden=false; $('lock').hidden=false;
-    $('choose-title').focus();
-  }catch{
-    if(run!==revision) return;
-    book=null; $('feedback').textContent=stage==='load'?'讀取報告失敗，請重新整理再試。':'解鎖失敗，請核對密碼；如密碼正確，請重新載入報告。';
-  }finally{if(run===revision)button.disabled=false;}
-});
-function card(title,cls=''){
-  const n=el('section',undefined,'card '+cls);n.append(el('h2',title));return n;
-}
-function portfolio(a){
-  const box=card('戶口快照','wide'),grid=el('div',undefined,'statgrid');
-  for(const [label,value] of [['帳戶淨值',cash(a.nav,a.currency)],['現金總值',cash(a.cash,a.currency)],['持倉數目',a.positions.length+' 隻']]){
-    const stat=el('div',undefined,'stat');stat.append(el('small',label),el('strong',value));grid.append(stat);
-  }box.append(grid);
-  const ranked=a.positions.filter(p=>Number.isFinite(p.weight)).sort((x,y)=>y.weight-x.weight).slice(0,3);
-  if(ranked.length===3 && ranked.every(p=>p.weight>=0) && ranked.reduce((s,p)=>s+p.weight,0)<=100){
-    const parts=ranked.map(p=>[p.symbol,p.weight]);parts.push(['其他及現金',100-ranked.reduce((s,p)=>s+p.weight,0)]);
-    const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
-    svg.setAttribute('viewBox','0 0 100 2');svg.setAttribute('preserveAspectRatio','none');svg.setAttribute('aria-hidden','true');svg.classList.add('bars');
-    const legend=el('div',undefined,'legend');let start=0;
-    parts.forEach(([label,weight],i)=>{const rect=document.createElementNS(ns,'rect');rect.setAttribute('x',String(start));rect.setAttribute('y','0');rect.setAttribute('width',String(weight));rect.setAttribute('height','2');rect.setAttribute('fill',['#5672a9','#99b2da','#b8cdbf','#dbe0e7'][i]);svg.append(rect);start+=weight;legend.append(el('span',label+' '+weight.toFixed(1)+'%','l'+i));});box.append(svg,legend);
+async function unlock(){
+ const generation=++run,button=$('form').querySelector('[type=submit]');button.disabled=true;$('feedback').textContent='讀取中…';
+ let phase='load';
+ try{
+  const r=await fetch('./'+room+'.enc.json',{cache:'no-store',credentials:'omit'});if(!r.ok)throw Error();
+  const e=await r.json();if(e.v!==2||e.mode!==(shared?'link':'password'))throw Error();phase='key';
+  let key;
+  if(shared){
+   const token=new URLSearchParams(location.hash.slice(1)).get('k');if(!token||!/^[A-Za-z0-9_-]{43}$/.test(token))throw Error();
+   key=await crypto.subtle.importKey('raw',bytes(token.replace(/-/g,'+').replace(/_/g,'/')),'AES-GCM',false,['decrypt']);
+  }else{
+   if(e.iterations!==600000)throw Error();
+   const raw=await crypto.subtle.importKey('raw',new TextEncoder().encode($('pass').value.trim()),'PBKDF2',false,['deriveKey']);
+   key=await crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',iterations:e.iterations,salt:bytes(e.salt)},raw,{name:'AES-GCM',length:256},false,['decrypt']);
   }
-  box.append(el('p',a.note,'note'));return box;
+  const data=await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(e.iv)},key,bytes(e.data));
+  if(generation!==run)return;phase='format';
+  const payload=JSON.parse(new TextDecoder().decode(data));if(payload.room!==room||!payload.account?.brief)throw Error();
+  draw(payload.account);$('gate').hidden=true;$('room').hidden=false;$('lock').hidden=shared;$('pass').value='';$('report-title').focus();
+ }catch{if(generation===run){$('intro').textContent=shared?'專屬報告':'私人投資手記';
+ $('feedback').textContent=phase==='load'?'未能載入報告，請重新整理。':phase==='format'?'報告格式未能讀取。':shared?'連結未完整或已失效，請重新開啟完整專屬連結。':'密碼未能解鎖呢份報告。';}}
+ finally{if(generation===run)button.disabled=false;}
 }
-function holdings(a){
-  const details=el('details',undefined,'card wide'); details.open=!a.large;
-  details.append(el('summary','持倉明細 · '+a.positions.length+' 隻'));
-  const scroll=el('div',undefined,'holder'), table=el('table'), head=table.createTHead().insertRow();
-  for(const label of ['股票','股數','截圖價','平均成本','截圖市值']){const th=el('th',label);th.scope='col';head.append(th);}
-  const body=table.createTBody();
-  for(const p of a.positions){const row=body.insertRow();for(const v of [p.symbol,number(p.qty),cash(p.price,p.currency),cash(p.cost,p.currency),cash(p.value,p.currency)])row.append(el('td',v));}
-  scroll.append(table);details.append(scroll);return details;
-}
-function showChooser(returnTo = null) {
-  selected = null;
-  $('panel').replaceChildren();
-  $('detail').hidden = true;
-  $('chooser').hidden = false;
-  const nav = $('members');
-  nav.replaceChildren();
-  book.accounts.forEach((person, i) => {
-    const button = el('button', undefined, 'member member-' + i);
-    button.type = 'button';
-    const badge = el('span', person.name.slice(0, 1), 'monogram');
-    const arrow = el('span', '↗', 'enter-arrow');
-    badge.setAttribute('aria-hidden', 'true');
-    arrow.setAttribute('aria-hidden', 'true');
-    button.append(badge, el('strong', person.name), arrow);
-    button.addEventListener('click', () => {
-      history.pushState({folioVisit:visit, account:i}, '');
-      showAccount(i);
-    });
-    nav.append(button);
-  });
-  if (returnTo !== null) nav.children[returnTo]?.focus();
-}
-function showAccount(index) {
-  const a = book.accounts[index], panel = $('panel');
-  selected = index;
-  $('chooser').hidden = true;
-  $('detail').hidden = false;
-  const title=el('div',undefined,'title'),h=el('h1',a.name+' 嘅報告');h.tabIndex=-1;
-  title.append(h,el('p',a.broker+' · 持倉截至 '+a.asOf,'sub'));
-  const grid=el('div',undefined,'board'+(a.large?' large':''));
-  const focus=card(a.large?'買賣簡表':'最近部署'),tl=card('覆核時間線');
-  focus.append(el('p',a.review.date+' 嘅紀錄','short when'));
-  for(const item of a.review.items){const row=el('div',undefined,'decision');row.append(el('b',item.title),el('p',item.body));focus.append(row);}
-  for(const e of a.timeline){const row=el('div',undefined,'event');row.append(el('span',e.date,'when'),el('b',e.title),el('p',e.body));tl.append(row);}
-  if(a.large)grid.append(focus,tl,portfolio(a));else grid.append(portfolio(a),focus,tl);
-  grid.append(holdings(a));panel.replaceChildren(title,grid);h.focus();
-}
+$('form').onsubmit=e=>{e.preventDefault();unlock();};
+$('reveal').onclick=()=>{const show=$('pass').type==='password';$('pass').type=show?'text':'password';$('reveal').textContent=show?'隱藏':'顯示';$('reveal').setAttribute('aria-pressed',String(show));};
+$('lock').onclick=()=>{reset();$('pass').focus();};
+window.addEventListener('pagehide',reset);
+window.addEventListener('pageshow',e=>{if(e.persisted&&shared)unlock();});
+reset();if(shared)unlock();
 
-$('back').addEventListener('click', () => {
-  if (history.state?.folioVisit === visit && selected !== null) history.back();
-  else showChooser(selected);
-});
-window.addEventListener('popstate', event => {
-  if (!book) return;
-  const state = event.state;
-  if (state?.folioVisit === visit && Number.isInteger(state.account) && book.accounts[state.account]) {
-    showAccount(state.account);
-  } else {
-    showChooser(selected);
-  }
-});
+function frame(title,cls=''){const s=el('section',null,'module '+cls);s.append(el('h2',title));return s;}
+function fact(host,label,value){const d=el('div',null,'fact');d.append(el('small',label),el('strong',value));host.append(d);}
+function note(host,label,body){const d=el('div',null,'point');d.append(el('small',label),el('p',body));host.append(d);}
+function chart(series){
+ const area=el('figure',null,'plot');
+ if(series.length<2){area.append(el('figcaption',series.length?'只核實到一個收市價，未足以畫趨勢。':'暫缺已核實收市行情。'));return area;}
+ const ns='http://www.w3.org/2000/svg', svg=document.createElementNS(ns,'svg');
+ function shape(tag,attrs,txt){const n=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));if(txt)n.textContent=txt;svg.append(n);return n;}
+ svg.setAttribute('viewBox','0 0 500 142');svg.setAttribute('role','img');svg.setAttribute('aria-label','已核實收市走勢，由 '+series[0].join('：')+' 至 '+series.at(-1).join('：'));
+ const values=series.map(x=>x[1]),min=Math.min(...values),max=Math.max(...values),space=Math.max(max-min,max*.002);
+ const time=series.map(x=>Date.parse(x[0]+'T12:00:00Z')),start=time[0],end=time.at(-1);
+ const xy=values.map((v,i)=>[9+414*(time[i]-start)/(end-start),114-85*(v-min)/space]);
+ for(const y of [29,71.5,114]){shape('line',{x1:9,x2:425,y1:y,y2:y,stroke:'#dce4ed','stroke-dasharray':'3 4'});shape('text',{x:436,y:y+4,fill:'#596979','font-size':11},(min+(114-y)*space/85).toFixed(2));}
+ const points=xy.map(p=>p.join(',')).join(' ');shape('polygon',{points:'9,129 '+points+' 423,129',fill:'#eaf0fc'});
+ shape('polyline',{points,fill:'none',stroke:'#315ea9','stroke-width':2.8,'stroke-linejoin':'round'});
+ xy.forEach(([x,y],i)=>{const p=shape('circle',{cx:x,cy:y,r:i===xy.length-1?4:2.6,fill:'#315ea9'});const t=document.createElementNS(ns,'title');t.textContent=series[i].join(' · ');p.append(t);});
+ const cap=el('figcaption');cap.append(el('span',series[0][0]),el('span','收市 · '+series.length+' 個觀察日'),el('span',series.at(-1)[0]));area.append(svg,cap);return area;
+}
+function details(a,sym,host){
+ const s=a.brief.stocks[sym],p=a.positions.find(x=>x.symbol===sym),series=s.series,last=series.at(-1),previous=series.at(-2);
+ host.replaceChildren();host.tabIndex=-1;
+ const flag=el('span',s.label,'pill'),top=el('div',null,'spread');top.append(el('span',p?'已確認持倉 · '+num(p.qty)+' 股':'自選觀察 · 未持有','kicker'),flag);
+ const h=el('h3',sym+'　'+s.name),price=el('div',null,'quote');
+ price.append(el('strong',last?money(last[1],s.currency):'收市價待核'));
+ if(last&&previous){const v=(last[1]/previous[1]-1)*100;price.append(el('span',(v>=0?'+':'')+v.toFixed(2)+'%','move '+(v>=0?'gain':'loss')));}
+ host.append(top,h,price,el('p',last?last[0]+' 正式收市'+(previous?' · 變幅對比 '+previous[0]:''):'未有可核實嘅收市價同變幅。','meta'));
+ host.append(chart(series));note(host,'點睇',s.reason);note(host,'下一步睇咩',s.watch);note(host,'幾時要重估',s.risk);
+ if(s.range)note(host,'最近已核實全日低位／高位',money(s.range[1],s.currency)+' ／ '+money(s.range[0],s.currency));
+ if(p){const parts=[p.price==null&&p.qty>0&&Number.isFinite(p.value)?'截圖每股約 '+money(p.value/p.qty,p.currency):null,p.cost!=null?'平均成本 '+money(p.cost,p.currency):null,p.value!=null?'市值 '+money(p.value,p.currency):null].filter(Boolean);if(parts.length)note(host,'持倉快照 · '+a.asOf,parts.join('　'));}
+ if(s.sources.length){const nav=el('div',null,'sources');for(const source of s.sources){const l=el('a',source.label+' ↗');l.href=source.url;l.target='_blank';l.rel='noopener noreferrer';nav.append(l);}host.append(nav);}
+}
+function draw(a){
+ const b=a.brief,root=$('panel'),h=el('h1',a.name+' 嘅部署');h.id='report-title';h.tabIndex=-1;
+ const expired=Date.now()>=Date.parse(b.expires);
+ const head=el('header',null,'deskhead');head.append(el('small',b.published+' 更新 · 香港時間'),h,el('p',b.session+' 交易日　／　'+(expired?'部署已到期':b.kind)));
+ const grid=el('div',null,'desk'+(a.large?' elder':'')),lead=frame(expired?'上次部署':b.kind,'lead'),snap=frame('戶口快照','snapshot');
+ lead.append(el('h3',b.headline),el('p',b.summary));
+ if(b.simple){const tbl=el('table',null,'simple');for(const line of b.simple){let tr=tbl.insertRow();line.forEach(x=>tr.append(el('td',x)));}lead.append(tbl);}
+ const actions=el('div',null,'actions'),list=frame('逐股動向','instruments'),detail=frame('','security');detail.setAttribute('aria-label','個股分析');
+ const syms=Object.keys(b.stocks),buttons=new Map();
+ function pick(s,mobile=false){
+  for(const [key,btn] of buttons){btn.setAttribute('aria-pressed',String(s===key));}
+  details(a,s,detail);if(mobile){detail.focus({preventScroll:true});detail.scrollIntoView({block:'nearest'});}
+ }
+ for(const [sym,label,body] of b.priorities){
+  const button=el('button',null,'action');button.type='button';const copy=el('span');copy.append(el('strong',sym+'　'+label),el('small',body));button.append(copy,el('span','↗'));button.onclick=()=>{if(buttons.get(sym)?.hidden)list.querySelector('.filters button')?.click();pick(sym,true);};actions.append(button);
+ }
+ lead.append(actions,el('small','適用至 '+new Intl.DateTimeFormat('zh-HK',{timeZone:'Asia/Hong_Kong',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(b.expires))+' 香港時間；港股以當地收市為限。','meta'));
+ snap.append(el('p',a.asOf+' 確認 · '+a.broker,'meta'));
+ fact(snap,a.balanceNote?'資產淨值 · '+a.balanceNote:'資產淨值',a.navDisplay||money(a.nav,a.currency));
+ fact(snap,a.cashDisplay?'美元現金':'現金總值',a.cashDisplay||money(a.cash,a.currency));
+ fact(snap,'已確認持倉',a.positions.length+' 隻');snap.append(el('p',a.note,'meta'));
+ const rows=el('div',null,'rows');
+ for(const sym of syms){
+  const s=b.stocks[sym],btn=el('button',null,'stockrow'),identity=el('span'),price=el('span');
+  btn.type='button';identity.append(el('strong',sym),el('small',s.name));const last=s.series.at(-1);
+  price.append(el('strong',last?num(last[1]):'待核'),el('small',s.label));btn.append(identity,price);btn.onclick=()=>pick(sym,window.matchMedia('(max-width:760px)').matches);buttons.set(sym,btn);rows.append(btn);
+ }
+ if(a.large||b.watchlist?.length){const filters=el('div',null,'filters'),choices=a.large?[['全部',()=>true],['港股',s=>/^\d/.test(s)],['美股',s=>!/^\d/.test(s)]]:[['全部',()=>true],['持倉',s=>!b.watchlist.includes(s)],['自選',s=>b.watchlist.includes(s)]];
+ for(const [name,test] of choices){const btn=el('button',name);btn.type='button';btn.setAttribute('aria-pressed',String(name==='全部'));btn.onclick=()=>{for(const c of filters.children)c.setAttribute('aria-pressed',String(c===btn));for(const [sym,row] of buttons)row.hidden=!test(sym);pick(syms.find(test));};filters.append(btn);}list.append(filters);}
+ list.append(el('p','揀一隻睇走勢、條件同風險。','meta'),rows);
+ const past=el('details',null,'module history');past.append(el('summary','上次部署紀錄 · '+a.review.date));for(const i of a.review.items)note(past,i.title,i.body);
+ const held=el('details',null,'module history');held.append(el('summary','持倉明細 · '+a.asOf));const wrap=el('div',null,'holder'),t=el('table');const hdr=t.createTHead().insertRow();for(const item of ['股票','股數','平均成本','截圖市值'])hdr.append(el('th',item));const body=t.createTBody();for(const p of a.positions){const tr=body.insertRow();for(const x of [p.symbol,num(p.qty),money(p.cost,p.currency),money(p.value,p.currency)])tr.append(el('td',x));}wrap.append(t);held.append(wrap);
+ grid.append(lead,snap,list,detail,held,past);root.replaceChildren(head,grid);pick(b.priorities[0][0]);
+}
