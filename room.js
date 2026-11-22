@@ -73,6 +73,55 @@ function details(a,sym,host){
  if(p){const parts=[p.price==null&&p.qty>0&&Number.isFinite(p.value)?'截圖每股約 '+money(p.value/p.qty,p.currency):null,p.cost!=null?'平均成本 '+money(p.cost,p.currency):null,p.value!=null?'市值 '+money(p.value,p.currency):null].filter(Boolean);if(parts.length)note(host,'持倉快照 · '+a.asOf,parts.join('　'));}
  if(s.sources.length){const nav=el('div',null,'sources');for(const source of s.sources){const l=el('a',source.label+' ↗');l.href=source.url;l.target='_blank';l.rel='noopener noreferrer';nav.append(l);}host.append(nav);}
 }
+
+const colors=['#5758b7','#64a89b','#eda057','#87a3d6','#b77eae','#80a25e','#d48180','#6497a9','#d3b351','#a58fd2','#677a84','#a98f75','#78947e','#b5a4bf'];
+function exposure(account){
+ const box=frame('持倉分布','mix'),rows=account.positions;
+ const units=new Set(rows.map(p=>p.currency)),currency=units.size===1?rows[0].currency:account.currency;
+ const fx=account.allocationFX;
+ if(rows.some(p=>!Number.isFinite(p.value)||p.value<0||(!units.has(currency)&&!fx)||(p.currency!==currency&&!(fx?.[p.currency]>0)))){
+  box.append(el('p','市值或匯率待核，暫未能計齊所有持倉比例。','meta'));return box;
+ }
+ const items=rows.map(p=>({...p,base:p.value*(p.currency===currency?1:fx[p.currency])})).sort((a,b)=>b.base-a.base);
+ const total=items.reduce((s,p)=>s+p.base,0);
+ if(!total){box.append(el('p','暫無可計算市值。'));return box;}
+ const body=el('div',null,'mixbody'),disc=el('div',null,'wheel'),center=el('div',null,'wheeltext'),cap=el('small','持倉'),big=el('strong'),svgns='http://www.w3.org/2000/svg';
+ const svg=document.createElementNS(svgns,'svg');svg.setAttribute('viewBox','0 0 100 100');svg.setAttribute('aria-hidden','true');center.append(cap,big);
+ const legend=el('div',null,'mixlegend'),readout=el('p',null,'readout');readout.setAttribute('aria-live','polite');let active=-1;
+ const segments=[],buttons=[];
+ function select(i){active=i;const p=items[i];big.textContent=(100*p.base/total).toFixed(1)+'%';cap.textContent=p.symbol;
+ readout.textContent=p.symbol+' · '+num(p.qty)+' 股 · '+money(p.value,p.currency)+(p.currency!==currency?' ≈ '+money(p.base,currency):'');
+ buttons.forEach((b,j)=>b.setAttribute('aria-pressed',String(i===j)));segments.forEach((c,j)=>c.setAttribute('stroke-width',String(j===i?17:13)));}
+ let used=0;
+ items.forEach((p,i)=>{let share=p.base/total*100;const color=colors[i%colors.length],c=document.createElementNS(svgns,'circle');
+ for(const [k,v] of Object.entries({cx:50,cy:50,r:39,pathLength:100,fill:'none',stroke:color,'stroke-dasharray':Math.max(0,share-Math.min(.5,share*.08))+' '+(100-share+Math.min(.5,share*.08)),'stroke-dashoffset':-used,transform:'rotate(-90 50 50)'}))c.setAttribute(k,String(v));
+ used+=share;c.addEventListener('click',()=>select(i));segments.push(c);svg.append(c);
+ const b=el('button',null,'legenditem'),dot=document.createElementNS(svgns,'svg');dot.setAttribute('width','10');dot.setAttribute('height','10');dot.setAttribute('aria-hidden','true');const d=document.createElementNS(svgns,'circle');d.setAttribute('cx',5);d.setAttribute('cy',5);d.setAttribute('r',4);d.setAttribute('fill',color);dot.append(d);
+ b.append(dot,el('span',account.large?(account.brief.stocks[p.symbol]?.name||p.symbol)+' · '+p.symbol:p.symbol),el('strong',share.toFixed(1)+'%'));b.type='button';b.onclick=()=>select(i);buttons.push(b);legend.append(b);});
+ disc.append(svg,center);body.append(disc,legend);box.append(el('p',items.length+' 隻 · '+money(account.securitiesTotal??total,currency)+' 證券市值','meta'),body,readout,el('p',account.asOf+' 快照 · 百分比以全部持股市值計，現金另列。'+(units.size>1?' 美股按截圖折算，1 美元約 '+num(fx.USD)+' 港元。':''),'meta'));if(units.size>1){
+ const splits=el('div',null,'regions');
+ for(const [cc,label] of [['HKD','港股'],['USD','美股']]){const sum=items.filter(p=>p.currency===cc).reduce((v,p)=>v+p.base,0);if(sum>0)fact(splits,label+' · 佔證券市值',(100*sum/total).toFixed(1)+'%');}
+ box.append(splits);}
+ select(0);return box;
+}
+function outlink(url,label){if(!url||!/^https:\/\//.test(url))return document.createTextNode('');const a=el('a',label+' ↗','outlink');a.href=url;a.rel='noopener noreferrer';a.target='_blank';return a;}
+function bulletin(b){
+ const f=frame('最值得留意嘅新聞','bulletin');
+ for(const item of b.news||[]){const ar=el('article',null,'bullet');ar.append(el('small',item.when,'time'),el('h3',item.title),el('p',item.fact),el('p',item.impact,'impact'),outlink(item.source,'查閱來源'));f.append(ar);}
+ if(!b.news?.length)f.append(el('p','今期未有已核實嘅重大消息。','meta'));return f;
+}
+function candidates(b){
+ const f=frame('值得留意嘅新股','ideas');for(const i of b.ideas||[]){const ar=el('article');ar.append(el('small',i.stage,'pill'),el('h3',i.name+'　'+i.ticker),el('p',i.when,'meta'),el('p',i.why));note(ar,'值得睇嘅條件',i.watch);note(ar,'風險',i.risk);ar.append(outlink(i.source,'公司公告'));if(i.extraSource)ar.append(outlink(i.extraSource,'招股書'));f.append(ar);}
+ if(!b.ideas?.length)f.append(el('p','今期未有符合條件嘅新股。','meta'));return f;
+}
+function navigation(pairs){
+ const nav=el('nav',null,'rail');nav.setAttribute('aria-label','報告分區');
+ for(const [title,icon,target] of pairs){
+ const b=el('button');b.type='button';const glyph=el('span',icon,'navglyph');glyph.setAttribute('aria-hidden','true');b.append(glyph,el('span',title));
+ b.setAttribute('aria-pressed',String(nav.children.length===0));b.onclick=()=>{for(const sibling of nav.children)sibling.setAttribute('aria-pressed',String(sibling===b));target.tabIndex=-1;target.focus({preventScroll:true});target.scrollIntoView({block:'start'});};nav.append(b);}
+ return nav;
+}
+
 function draw(a){
  const b=a.brief,root=$('panel'),h=el('h1',a.name+' 嘅部署');h.id='report-title';h.tabIndex=-1;
  const expired=Date.now()>=Date.parse(b.expires);
@@ -105,5 +154,7 @@ function draw(a){
  list.append(el('p','揀一隻睇走勢、條件同風險。','meta'),rows);
  const past=el('details',null,'module history');past.append(el('summary','上次部署紀錄 · '+a.review.date));for(const i of a.review.items)note(past,i.title,i.body);
  const held=el('details',null,'module history');held.append(el('summary','持倉明細 · '+a.asOf));const wrap=el('div',null,'holder'),t=el('table');const hdr=t.createTHead().insertRow();for(const item of ['股票','股數','平均成本','截圖市值'])hdr.append(el('th',item));const body=t.createTBody();for(const p of a.positions){const tr=body.insertRow();for(const x of [p.symbol,num(p.qty),money(p.cost,p.currency),money(p.value,p.currency)])tr.append(el('td',x));}wrap.append(t);held.append(wrap);
- grid.append(lead,snap,list,detail,held,past);root.replaceChildren(head,grid);pick(b.priorities[0][0]);
+ const mix=exposure(a),news=bulletin(b),ideas=candidates(b),sheet=el('div',null,'sheet'),area=el('div',null,'workarea');
+ grid.append(lead,mix,news,ideas,snap,list,detail,held,past);sheet.append(head,grid);
+ area.append(navigation([['部署','▦',lead],['分布','◔',mix],['新聞','≡',news],['新股','◇',ideas],['持股','▤',list]]),sheet);root.replaceChildren(area);pick(b.priorities[0][0]);
 }
