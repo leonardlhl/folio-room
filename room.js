@@ -67,6 +67,35 @@ function chart(series){
  xy.forEach(([x,y],i)=>{const p=shape('circle',{cx:x,cy:y,r:i===xy.length-1?4:2.6,fill:ink});const t=document.createElementNS(ns,'title');t.textContent=series[i].join(' · ');p.append(t);});
  const cap=el('figcaption');cap.append(el('span',series[0][0]),el('span','收市 · '+series.length+' 個觀察日'),el('span',series.at(-1)[0]));area.append(svg,cap);return area;
 }
+const hkTime = new Intl.DateTimeFormat('zh-HK', {
+ timeZone:'Asia/Hong_Kong', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', hourCycle:'h23'
+});
+function tradeLevels(brief, symbol, summary) {
+ const stock=brief.stocks[symbol], levels=stock.levels||{};
+ const ends=levels.until||brief.expires;
+ const box=el('article',null,'trade-row');
+ const top=el('div',null,'trade-name');
+ top.append(el('strong',symbol+' · '+stock.name));
+ const time=el('time',null,'trade-time');time.dateTime=ends;if(stock.currency==='HKD'&&!levels.until)time.dataset.localClose='true';top.append(time);
+ const fields=el('dl',null,'trade-fields');
+ for(const [label,value] of [['買入／加倉',levels.buy],['賣出／減倉',levels.sell]]){
+  const field=el('div');field.append(el('dt',label),el('dd',value||'今期未列價'));fields.append(field);
+ }
+ const observation=el('p',levels.trigger||summary||stock.watch,'trade-trigger');
+ box.append(top,fields,observation);
+ if(levels.risk)box.append(el('p',levels.risk,'trade-risk'));
+ return box;
+}
+function refreshLevelTimes(){
+ for(const stamp of document.querySelectorAll('.trade-time')){
+  const deadline=new Date(stamp.dateTime),expired=Date.now()>=deadline.getTime();
+  stamp.textContent=(expired?'已到期 · ':'至 ')+hkTime.format(deadline)+' 香港時間'+(stamp.dataset.localClose?' · 港股以當地收市為限':'');
+  stamp.closest('.trade-row').classList.toggle('archived',expired);
+ }
+}
+window.setInterval(refreshLevelTimes,30000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLevelTimes();});
+
 function details(a,sym,host){
  const s=a.brief.stocks[sym],p=a.positions.find(x=>x.symbol===sym),series=s.series,last=series.at(-1),previous=series.at(-2);
  host.replaceChildren();host.tabIndex=-1;
@@ -75,6 +104,7 @@ function details(a,sym,host){
  price.append(el('strong',last?money(last[1],s.currency):'收市價待核'));
  if(last&&previous){const v=(last[1]/previous[1]-1)*100;price.append(el('span',(v>=0?'+':'')+v.toFixed(2)+'%','move '+(v>=0?'gain':'loss')));}
  host.append(top,h,price,el('p',last?last[0]+' 正式收市'+(previous?' · 變幅對比 '+previous[0]:''):'未有可核實嘅收市價同變幅。','meta'));
+ host.append(tradeLevels(a.brief,sym));if(host.isConnected)refreshLevelTimes();
  host.append(chart(series));note(host,'點睇',s.reason);note(host,'下一步睇咩',s.watch);note(host,'幾時要重估',s.risk);
  if(s.range)note(host,'最近已核實全日低位／高位',money(s.range[1],s.currency)+' ／ '+money(s.range[0],s.currency));
  if(p){const parts=[p.price==null&&p.qty>0&&Number.isFinite(p.value)?'截圖每股約 '+money(p.value/p.qty,p.currency):null,p.cost!=null?'平均成本 '+money(p.cost,p.currency):null,p.value!=null?'市值 '+money(p.value,p.currency):null].filter(Boolean);if(parts.length)note(host,'持倉快照 · '+a.asOf,parts.join('　'));}
@@ -183,7 +213,12 @@ function draw(a){
  list.append(el('p','揀一隻睇走勢、條件同風險。','meta'),rows);
  const past=el('details',null,'module history');past.append(el('summary','上次部署紀錄 · '+a.review.date));for(const i of a.review.items)note(past,i.title,i.body);
  const held=el('details',null,'module history');held.append(el('summary','持倉明細 · '+a.asOf));const wrap=el('div',null,'holder'),t=el('table');const hdr=t.createTHead().insertRow();for(const item of ['股票','股數','平均成本','截圖市值'])hdr.append(el('th',item));const body=t.createTBody();for(const p of a.positions){const tr=body.insertRow();for(const x of [p.symbol,num(p.qty),money(p.cost,p.currency),money(p.value,p.currency)])tr.append(el('td',x));}wrap.append(t);held.append(wrap);
+ const priceBoard=frame('買賣價位','priceboard');
+ priceBoard.append(el('p',b.session+' 交易日 · 價位同條件按個人戶口列出','meta'));
+ const priorityNotes=new Map(b.priorities.map(([sym,,summary])=>[sym,summary]));
+ const shown=new Set([...priorityNotes.keys(),...syms.filter(sym=>b.stocks[sym].levels)]);
+ for(const sym of shown)priceBoard.append(tradeLevels(b,sym,priorityNotes.get(sym)));
  const mix=exposure(a),news=bulletin(b),ideas=candidates(b),sheet=el('div',null,'sheet'),area=el('div',null,'workarea');
- grid.append(snap,mix,lead,news,ideas,list,detail,held,past);sheet.append(head,grid);
- area.append(navigation([['部署','M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',lead],['分布','M10 3a9 9 0 1 0 11 11H10z M14 2v8h8a9 9 0 0 0-8-8z',mix],['新聞','M4 4h16v16H4z M7 8h10 M7 12h4 M14 12h3 M7 16h10',news],['新股','M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z',ideas],['持股','M3 19h18 M6 15V9 M12 15V4 M18 15v-5',list]]),sheet);root.replaceChildren(area);pick(b.priorities[0][0]);
+ grid.append(priceBoard,snap,mix,lead,news,ideas,list,detail,held,past);sheet.append(head,grid);
+ area.append(navigation([['價位','M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',priceBoard],['分布','M10 3a9 9 0 1 0 11 11H10z M14 2v8h8a9 9 0 0 0-8-8z',mix],['新聞','M4 4h16v16H4z M7 8h10 M7 12h4 M14 12h3 M7 16h10',news],['新股','M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z',ideas],['持股','M3 19h18 M6 15V9 M12 15V4 M18 15v-5',list]]),sheet);root.replaceChildren(area);pick(b.priorities[0][0]);refreshLevelTimes();
 }
