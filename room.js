@@ -196,6 +196,42 @@ function navigation(pairs){
  return nav;
 }
 
+function moverCard(account,showSecurity){
+ const move=account.mover,position=account.positions.find(p=>p.symbol===move?.symbol);
+ if(!position || !Number.isFinite(move.change))return null;
+ const card=el('section',null,'mover');
+ card.setAttribute('aria-label','持倉焦點');
+ const daily=move.kind==='daily', rising=move.change>0;
+ const magnitude=(rising?'＋':'−')+money(Math.abs(move.change),move.currency);
+ const title=el('h2',move.symbol+' · '+(daily?(rising?'當日盈利貢獻最大':'當日虧損影響最大'):(rising?'持倉市值增加最多':'持倉市值減少最多')));
+ const head=el('div',null,'mover-heading');
+ head.append(el('span','持倉焦點','mover-label'),title);
+ const stat=el('strong',magnitude,'mover-stat '+(rising?'positive':'negative'));
+ const description=[];
+ if(daily){
+  description.push('券商當日盈虧');
+  if(Number.isFinite(move.accountDayPL) && move.accountDayPL*move.change>0)
+   description.push('佔戶口當日'+(rising?'升幅':'跌幅')+' '+num(Math.round(1000*move.change/move.accountDayPL)/10)+'%');
+ }else{
+  description.push('兩次截圖市值變動', (rising?'＋':'−')+Math.abs(move.percent).toFixed(1)+'%');
+ }
+ const basis=daily?move.to+' 截圖':move.from+' 至 '+move.to+' 截圖';
+ const detail=el('button','睇 '+move.symbol+' 持倉','mover-detail');
+ detail.type='button';detail.onclick=()=>showSecurity(move.symbol);
+ const quote=position.price??(position.qty>0 && Number.isFinite(position.value)?position.value/position.qty:null);
+ const reference=account.brief.stocks[move.symbol]?.series?.at(-1);
+ if(daily && reference?.[1]>0 && reference[0]<move.to && Date.parse(move.to)-Date.parse(reference[0])<=7*86400000 && quote>0){
+  const pct=(quote/reference[1]-1)*100;
+  description.push('截圖價較 '+reference[0].slice(5).replace('-','/')+' 收市 '+(pct>=0?'＋':'−')+Math.abs(pct).toFixed(1)+'%');
+ }
+ const priceLabel=position.price==null?'每股折算約 ':'每股 ';
+ const footer=el('div',null,'mover-foot');
+ footer.append(el('span',basis+' · '+num(position.qty)+' 股'+(Number.isFinite(quote)?' · '+priceLabel+money(quote,move.currency):'')+
+  (move.comparable<move.total?' · 可比較 '+move.comparable+'/'+move.total+' 隻':'')),detail);
+ card.append(head,stat,el('p',description.join(' · '),'mover-basis'),footer);
+ return card;
+}
+
 function draw(a){
  const b=a.brief,root=$('panel'),h=el('h1',a.name+' 嘅部署');h.id='report-title';h.tabIndex=-1;
  const expired=Date.now()>=Date.parse(b.expires);
@@ -237,6 +273,12 @@ function draw(a){
  for(const sym of shown)cards.append(tradeLevels(b,sym,priorityNotes.get(sym)));
  priceBoard.append(cards);
  const mix=exposure(a),news=bulletin(b),ideas=candidates(b),sheet=el('div',null,'sheet'),area=el('div',null,'workarea');
- grid.append(priceBoard,snap,mix,lead,news,ideas,list,detail,held,past);sheet.append(head,grid);
+ grid.append(priceBoard,snap,mix,lead,news,ideas,list,detail,held,past);sheet.append(head);
+ const mover=moverCard(a,symbol=>{
+  if(buttons.get(symbol)?.hidden)list.querySelector('.filters button')?.click();
+  pick(symbol,true);
+ });
+ if(mover)sheet.append(mover);
+ sheet.append(grid);
  area.append(navigation([['價位','M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',priceBoard],['分布','M10 3a9 9 0 1 0 11 11H10z M14 2v8h8a9 9 0 0 0-8-8z',mix],['新聞','M4 4h16v16H4z M7 8h10 M7 12h4 M14 12h3 M7 16h10',news],['新股','M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z',ideas],['持股','M3 19h18 M6 15V9 M12 15V4 M18 15v-5',list]]),sheet);root.replaceChildren(area);pick(b.priorities[0][0]);refreshLevelTimes();
 }
