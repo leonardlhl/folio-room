@@ -70,6 +70,17 @@ function chart(series){
 const hkTime = new Intl.DateTimeFormat('zh-HK', {
  timeZone:'Asia/Hong_Kong', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', hourCycle:'h23'
 });
+function priceText(value) {
+ const fragment=document.createDocumentFragment();
+ const amounts=/(?:US\$|HK\$|USD\s*|HKD\s*|\$)\s*\d+(?:,\d{3})*(?:\.\d+)?/gi;
+ let cursor=0;
+ for(const match of value.matchAll(amounts)){
+  fragment.append(value.slice(cursor,match.index),el('strong',match[0],'trade-amount'));
+  cursor=match.index+match[0].length;
+ }
+ fragment.append(value.slice(cursor));
+ return fragment;
+}
 function tradeLevels(brief, symbol, summary) {
  const stock=brief.stocks[symbol], levels=stock.levels||{};
  const ends=levels.until||brief.expires;
@@ -79,12 +90,16 @@ function tradeLevels(brief, symbol, summary) {
  const time=el('time',null,'trade-time');time.dateTime=ends;if(stock.currency==='HKD'&&!levels.until)time.dataset.localClose='true';top.append(time);
  const fields=el('dl',null,'trade-fields');
  for(const [label,value] of [['買入／加倉',levels.buy],['賣出／減倉',levels.sell]]){
-  const field=el('div');field.append(el('dt',label),el('dd',value||'今期未列價'));fields.append(field);
+  const field=el('div'),description=el('dd');
+  description.append(priceText(value||'今期未列價'));
+  field.append(el('dt',label),description);fields.append(field);
  }
  const observation=el('p',null,'trade-trigger');
- observation.append(el('span','觀察條件','trade-prefix'),document.createTextNode(levels.trigger||summary||stock.watch));
+ observation.append(el('span','觀察條件','trade-prefix'),priceText(levels.trigger||summary||stock.watch||''));
  box.append(top,fields,observation);
- if(levels.risk)box.append(el('p',levels.risk,'trade-risk'));
+ if(levels.risk){
+  const risk=el('p',null,'trade-risk');risk.append(priceText(levels.risk));box.append(risk);
+ }
  return box;
 }
 function refreshLevelTimes(){
