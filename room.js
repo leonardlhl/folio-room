@@ -232,6 +232,118 @@ function moverCard(account,showSecurity){
  return card;
 }
 
+function paperPortfolio(data) {
+ const box=frame('模擬投資組合','paper-portfolio');
+ box.id='paper-portfolio';
+ const title=box.firstElementChild;
+ title.id='paper-portfolio-heading';
+ box.setAttribute('aria-labelledby',title.id);
+
+ const layout=el('div',null,'paper-layout');
+ const journal=el('div',null,'paper-journal'),performance=el('aside',null,'paper-performance');
+ layout.append(journal,performance);
+ const dailyHead=el('div',null,'paper-daily-head');
+ dailyHead.append(el('h3','每日模擬交易'));
+ const choose=el('label','美股交易日','paper-date');
+ const picker=el('select');
+ for(const day of data.days){
+  const option=el('option',day.date);
+  option.value=day.date;
+  picker.append(option);
+ }
+ choose.append(picker);
+ dailyHead.append(choose);
+ const daily=el('div',null,'paper-daily-body');
+ daily.setAttribute('aria-live','polite');
+ journal.append(dailyHead,daily);
+ const pnl=n=>Number.isFinite(n)?(n>0?'+':'')+money(n,'USD'):'待核';
+
+ function showTrades(title,trades) {
+  daily.append(el('h4',title));
+  if(!trades.length){
+   daily.append(el('p','呢日暫無已記錄嘅模擬買賣。','meta'));
+   return;
+  }
+  const holder=el('div',null,'paper-table-wrap'),table=el('table',null,'paper-table');
+  table.setAttribute('aria-label',title);
+  const header=table.createTHead().insertRow();
+  for(const x of ['股票','狀態','股數','每股價','淨盈虧']){
+   const th=el('th',x);th.scope='col';header.append(th);
+  }
+  const body=table.createTBody();
+  for(const x of trades){
+   const tr=body.insertRow(),details=el('td',x.action);
+   if(x.detail)details.append(el('small',x.detail));
+   tr.append(el('th',x.ticker),details,el('td',Number.isFinite(x.qty)?num(x.qty):'—'),
+             el('td',Number.isFinite(x.price)?num(x.price):'—'),
+             el('td',Number.isFinite(x.pnl)?pnl(x.pnl):'—',x.pnl>0?'positive':x.pnl<0?'negative':''));
+   tr.firstElementChild.scope='row';
+  }
+  holder.append(table);
+  daily.append(holder);
+ }
+
+ function showDay(){
+  const d=data.days.find(day=>day.date===picker.value);
+  daily.replaceChildren();
+  if(!d){
+   daily.append(el('p','暫無模擬紀錄。','meta'));
+   return;
+  }
+  showTrades('共用現金組合',d.portfolio);
+  showTrades('獨立單筆模擬',d.standalone);
+  if(d.reconciliation?.nav==null && d.date>=data.nav?.date){
+   daily.append(el('p',d.reconciliation?'全組合淨值仍待核對。':'呢日嘅全組合收市對帳仍待更新。','meta'));
+  }
+ }
+ picker.addEventListener('change',showDay);
+ showDay();
+
+ performance.append(el('h3','累積盈虧'),
+                    el('p','共用現金組合 · 已平倉淨額','paper-metric-label'),
+                    el('strong',pnl(data.portfolio.net),'paper-net '+(data.portfolio.net<0?'negative':'positive')),
+                    el('p','已核實 '+data.portfolio.closed+' 筆 · '+data.portfolio.wins+' 筆錄得淨利','meta'));
+ const figures=el('dl',null,'paper-figures');
+ for(const [label,value] of [
+   ['起始模擬資金',money(data.startingCash,'USD')],
+   ['已入帳模擬注資',money(data.deposits??0,'USD')],
+   ['全組合淨值',Number.isFinite(data.nav?.nav)?money(data.nav.nav,'USD'):'待核'],
+   ['可用模擬現金',Number.isFinite(data.nav?.cash)?money(data.nav.cash,'USD'):'待核'],
+   ['獨立單筆累積淨額',pnl(data.standalone.net)]
+ ]){
+  const item=el('div');item.append(el('dt',label),el('dd',value));figures.append(item);
+ }
+ performance.append(figures,el('p','獨立單筆已平倉 '+data.standalone.closed+' 筆，每筆按 US$1,000 模擬。','meta'));
+ if(data.nav?.date)performance.append(el('p','最近對帳 '+data.nav.date+' 美東收市','meta'));
+ if(data.positions.length){
+  const holdings=el('div',null,'paper-holdings');
+  holdings.append(el('h4','模擬持倉狀態'));
+  for(const position of data.positions){
+   const copy=position.pending?'退出價待核':Number.isFinite(position.value)?
+      '市值 '+money(position.value,'USD')+'；帳面 '+pnl(position.unrealized)+'（'+position.date+'）':'市值待核';
+   holdings.append(el('p',position.ticker+' '+num(position.qty)+' 股 · '+copy,'meta'));
+  }
+  performance.append(holdings);
+ }
+
+ const review=el('div',null,'paper-review');
+ if(data.lessons.length){
+  const lessons=el('div',null,'paper-lessons');
+  lessons.append(el('h3','覆盤筆記'));
+  for(const x of data.lessons)note(lessons,x.title,x.body);
+  review.append(lessons);
+ }
+ const follow=el('div',null,'paper-followup');
+ follow.append(el('h3','待確認'));
+ if(data.confirmation)note(follow,'需要你確認',data.confirmation);
+ if(data.pendingEntries.length)note(follow,'待行情核對',data.pendingEntries.join('、')+' 嘅正式開市成交價有差異。');
+ if(data.pendingExits.length)note(follow,'退出待核',data.pendingExits.join('、')+' 嘅退出價或入場前提仍待核。');
+ if(!data.confirmation && !data.pendingEntries.length && !data.pendingExits.length)follow.append(el('p','目前無待確認項目。','meta'));
+ review.append(follow);
+ box.append(el('p','紙上交易紀錄 · 日期按美東交易日 · 金額以美元計','meta'),layout,review);
+ return box;
+}
+
 function draw(a){
  const b=a.brief,root=$('panel'),h=el('h1',a.name+' 嘅部署');h.id='report-title';h.tabIndex=-1;
  const expired=Date.now()>=Date.parse(b.expires);
@@ -273,12 +385,19 @@ function draw(a){
  for(const sym of shown)cards.append(tradeLevels(b,sym,priorityNotes.get(sym)));
  priceBoard.append(cards);
  const mix=exposure(a),news=bulletin(b),ideas=candidates(b),sheet=el('div',null,'sheet'),area=el('div',null,'workarea');
- grid.append(priceBoard,snap,mix,lead,news,ideas,list,detail,held,past);sheet.append(head);
+ grid.append(priceBoard,snap,mix,lead,news,ideas,list,detail,held,past);
+ const paper=a.paperDashboard?paperPortfolio(a.paperDashboard):null;
+ if(paper)grid.append(paper);
+ sheet.append(head);
  const mover=moverCard(a,symbol=>{
   if(buttons.get(symbol)?.hidden)list.querySelector('.filters button')?.click();
   pick(symbol,true);
  });
  if(mover)sheet.append(mover);
  sheet.append(grid);
- area.append(navigation([['價位','M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',priceBoard],['分布','M10 3a9 9 0 1 0 11 11H10z M14 2v8h8a9 9 0 0 0-8-8z',mix],['新聞','M4 4h16v16H4z M7 8h10 M7 12h4 M14 12h3 M7 16h10',news],['新股','M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z',ideas],['持股','M3 19h18 M6 15V9 M12 15V4 M18 15v-5',list]]),sheet);root.replaceChildren(area);pick(b.priorities[0][0]);refreshLevelTimes();
+ const links=[['價位','M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',priceBoard],['分布','M10 3a9 9 0 1 0 11 11H10z M14 2v8h8a9 9 0 0 0-8-8z',mix],['新聞','M4 4h16v16H4z M7 8h10 M7 12h4 M14 12h3 M7 16h10',news],['新股','M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z',ideas],['持股','M3 19h18 M6 15V9 M12 15V4 M18 15v-5',list]];
+ if(paper)links.push(['模擬','M4 4h16v16H4z M7 15l4-4 2 2 4-5',paper]);
+ const rail=navigation(links);
+ if(paper)rail.classList.add('paper-enabled');
+ area.append(rail,sheet);root.replaceChildren(area);pick(b.priorities[0][0]);refreshLevelTimes();
 }
